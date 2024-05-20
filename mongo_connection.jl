@@ -1,5 +1,4 @@
-import Mongoc: Client, BSON, as_dict, find, find_one, insert_one, insert_many, aggregate
-import JSON: json
+import Mongoc: Client, BSON, as_dict, find, find_one, insert_one, insert_many, aggregate, find_and_modify
 
 
 struct Mongo 
@@ -82,7 +81,7 @@ end
 function run_aggregate(mongo::Mongo, database::String, collection::String, pipeline::Array)::Array
     try
         mongo_collection = mongo.connection[database][collection]
-        pipeline_bson = BSON(json(pipeline))
+        pipeline_bson = BSON(pipeline)
         result = aggregate(mongo_collection, pipeline_bson)
         if !isnothing(result)
             docs = Dict[]
@@ -97,6 +96,16 @@ function run_aggregate(mongo::Mongo, database::String, collection::String, pipel
     end 
 end
 
+function update_contents(mongo::Mongo, database::String, collection::String, query::Dict, updates::Dict)
+    try
+        mongo_collection = mongo.connection[database][collection]
+        bson_query = BSON(query)
+        bson_updates = BSON(updates)
+        find_and_modify(mongo_collection, bson_query, update=bson_updates)
+    catch e
+        rethrow("Error while updating element in '$database.$collection': $e")
+    end
+end
 
 #= USE
 
@@ -137,6 +146,11 @@ pipeline = Dict[
     Dict( "\$sort" => Dict( "year" => -1 ) ),
 ]
 result = run_aggregate(mongo, "testing", "imdbTitleBasics", pipeline)
+
+update:
+query = Dict( "imdbId" => "tt0103781" )
+update = Dict( "\$set" => Dict( "genres" => "Short" ) )
+update_contents( mongo, db, col, query, update )
 
 =#
 
