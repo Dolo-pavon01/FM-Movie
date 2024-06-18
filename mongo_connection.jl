@@ -33,7 +33,7 @@ function find_content(mongo::Mongo, database::String, collection::String, query:
     return result
 end
 
-function find_many_contents(mongo::Mongo, database::String, collection::String, query::Dict=Dict(), projection::Dict=Dict(), sort::Dict=Dict())::Array
+function find_many_contents(mongo::Mongo, database::String, collection::String ; query::Dict=Dict(), projection::Dict=Dict(), sort::Dict=Dict(), limit::Int=0)::Array
     try
         mongo_collection = mongo.connection[database][collection]
         query_bson = BSON(query)
@@ -42,8 +42,13 @@ function find_many_contents(mongo::Mongo, database::String, collection::String, 
         result = find(mongo_collection, query_bson, options=options_bson)
         if !isnothing(result)
             result_array = Dict[]
+            index = 0
             for item in result
                 push!(result_array, as_dict(item))
+                index += 1
+                if index == limit
+                    break
+                end
             end
             result = result_array
         end    
@@ -101,7 +106,8 @@ function update_contents(mongo::Mongo, database::String, collection::String, que
         mongo_collection = mongo.connection[database][collection]
         bson_query = BSON(query)
         bson_updates = BSON(updates)
-        find_and_modify(mongo_collection, bson_query, update=bson_updates)
+        r = find_and_modify(mongo_collection, bson_query, update=bson_updates)
+        # println("\nRESULT: $r\n")
     catch e
         rethrow("Error while updating element in '$database.$collection': $e")
     end
