@@ -1,88 +1,100 @@
+using Dates
 import HTTP
-import Gumbo
 import Formatting
 import Base.Threads.@threads
-include("extract_data_with_threads/mongo_connection_threads.jl")
+include("mongo_connection_threads.jl")
 
 using PyCall
+pyimport_conda("bs4", "beautifulsoup4")
 bs4 = pyimport("bs4").BeautifulSoup
 
 
 base_url = "https://letterboxd.com/films/ajax/popular/this/week/size/small/page/{}/?esiAllowFilters=true"
 content_type = "movie"
 
+
 function process_scraping(content_type::String, url::String)
-    page_step = 100
+    page_step = 2
     n_pages = get_page_numbers(url)
+    n_pages = 10
     println("n_pages :: $n_pages")
 
     for i in 1:page_step:n_pages
-        crawlers(content_url, [x for x in i:(i+page_step)], content_type)
+        println([x for x in i:(i+page_step)])
+        crawlers(url, [x for x in i:(i+page_step)], content_type)
     end
 
 end
 
 
-function proccess_crawlers(url::String, pages_range::Array, content_type::String)
+function crawlers(url::String, pages_range, content_type::String)::Array
+    
+    chunks = Iterators.partition(pages_range, length(pages_range) ÷ Threads.nthreads())
+    tasks = map(chunks) do chunk
+        # Threads.@spawn proccess_crawlers(url, chunk, content_type)
+        proccess_crawlers(url, chunk, content_type) # No using threads
+        
+    end
+    
+    fetch.(tasks) 
+end
+
+
+function proccess_crawlers(url::String, pages_range, content_type::String)
     for n_page in pages_range
-        url =  Formatting.formatting(url, string(n_page))
+        url =  Formatting.format(url, string(n_page))
         crawlers_result = get_crawlers(url)
+        println("\nPAGE $n_page | $(length(crawlers_result)) items")
+        if isnothing(crawlers_result) || length(crawlers_result)==0 continue end
         crawlers_item_result = Dict[]
         for item in crawlers_result
-            push!(crawlers_item_result, get_scraping(item, content_type))
+            item_result = get_scraping(item, content_type)
+            if isnothing(item_result) continue end
+            push!(crawlers_item_result, item_result)
         end
         insert(crawlers_item_result)
     end
 end
 
 
-function crawlers(url::String, pages_range::Array, content_type::String)::Array
-
-    chunks = Iterators.partition(pages_range, length(pages_range) ÷ Threads.nthreads())
-    tasks = map(chunks) do chunk
-        Threads.@spawn proccess_crawlers(url, chunk, content_type)
-    end
-
-    fetch.(tasks) 
-end
-
-
 function get_crawlers(url::String)
     host = "https://letterboxd.com"
     list_crawlers = Dict[]
-    soup = get_html(url)
-    if isnothin(soup)
+    html = get_html(url)
+    if isnothing(html)
         return
     end
 
-    items = soup.find_all("li", {"class": "listitem"})
+    items = html.find_all("li", Dict( "class" => "listitem"))
 
     if isnothing(items)
         return []
-
+    end 
     for item in items
         div_info = item.div
         if isnothing(div_info)
             continue
+        end
         relative_link = div_info.get("data-target-link")
         content_id = div_info.get("data-film-id")
 
-        if !isnothing(relative_link) && 
-            !isnothing(content_id)
+        if isnothing(relative_link) || isnothing(content_id)
             continue
+        end
 
-        link = host + relative_link
+        link = host * relative_link
+        rating = "";
         try
             rating = parse(Float64, item.get("data-average-rating"))
         catch
-            rating = nothing
+            rating = ""
         end 
 
-        item_to_scrape = {
-            "url": link,
-            "id": content_id,
-            "rating": rating
-        }
+        item_to_scrape = Dict(
+            "url" => link,
+            "id" => content_id,
+            "rating" => rating
+        )
         push!(list_crawlers, item_to_scrape)
     end
 
@@ -92,17 +104,83 @@ end
 
 function get_scraping(item, content_type::String)
 
-    # id = item["id"]
-    # url = item["url"]
-    # rating = item["rating"]
+    scraped_item = nothing;
 
-    # html = get_html(url)
+    id = item["id"]
+    url = item["url"]
+    rating = item["rating"]
 
-    # if isnothing(html)
-    #     return
-    
-    
+    html = get_html(url)
 
+    if isnothing(html)
+        return
+    end 
+    try
+        section_header = html.find("section", Dict( "class" => "film-header-group"))
+
+        title = nothing;
+        try
+            h1_title = section_header.find("h1")
+            title = strip(h1_title.text)
+        catch e
+            print("\nERROR:\n$e\n")
+        end
+
+        imdb_id, tmdb_id = nothing, nothing;
+        try
+            a_tag_imdb = html.find("a", Dict("data-track-action" => "IMDb"))
+            if !isnothing(a_tag_imdb) && !isnothing(a_tag_imdb.get("href"))
+                imdb_link = a_tag_imdb.get("href")
+                reg_match = match(r"tt\d+", imdb_link)
+                if !isnothing(reg_match)
+                    imdb_id = reg_match.match
+                end
+            end
+            a_tag_tmdb = html.find("a", Dict("data-track-action" => "TMDb"))
+            if !isnothing(a_tag_tmdb) && !isnothing(a_tag_tmdb.get("href"))
+                tmdb_link = a_tag_tmdb.get("href")
+                tmdb_id =  split( tmdb_link, "/" )[ end-1 ] # tmdb_link.split("/")[-2]
+            end
+        catch e
+            print("\nERROR:\n$e\n")
+        end
+
+        comments = nothing;
+        try
+            comments = get_comments(url)
+        catch e
+            print("\nERROR COMMENTS:\n$e\n")
+        end
+
+        scraped_item = Dict(
+            "platformCode" => "letterbox",
+            "id" => id,
+            "permalink" => url,
+            "title" => title,
+            "type" => content_type,
+            
+            "comments" => comments,
+
+            "imdb_id" => imdb_id,
+            "tmdb_id" => tmdb_id,
+            
+            "popularity" => Dict(
+                # "votes" => votes,
+                # "likes" => likes,
+                # "views" => views,
+                "rating" => rating,
+            ),
+            
+            "createdAt" => string(today()),
+        )
+
+    catch e
+        print("\nERROR WHILE SCRAPING ITEM:\n$e\n")
+    end
+
+    # print("\nSCRAPED ITEM:\n$scraped_item\n")
+
+    return scraped_item
 end
 
 
@@ -130,19 +208,30 @@ end
 
 function get_comments(url::String)::Array
     movie_reviews = []
-    comment_page_limit = 5
-    for  i in 1:comment_page_limit
-        html = get_html(url*"reviews/page/"*String(i))
-        all_reviews = soup.find_all("li", class_="film-detail")
+    comment_page_limit = 1
+    for i in 1:comment_page_limit
+        all_reviews = []
+        try
+            html = get_html(url * "reviews/page/" * string(i))
+            all_reviews = html.find_all("li", class_="film-detail")
+            # print("\n$all_reviews\n")
+        catch e
+            print("\nERROR 1:\n$e\n")
+            continue
+        end
         for review in all_reviews
-            review_text;
-            buffer_review = review.find("div", class_="body-text -prose collapsible-text")
-            if buffer_review.find("p", class_="contains-spoilers")
-                review_text = review2.find("div", "hidden-spoilers expanded-text").text
-            else
-                review_text = buffer_review.text
+            try                
+                review_text = "";
+                buffer_review = review.find("div", class_="body-text -prose collapsible-text")
+                if !isnothing(buffer_review.find("p", class_="contains-spoilers"))
+                    review_text = buffer_review.find("div", "hidden-spoilers expanded-text").text
+                else
+                    review_text = buffer_review.text
+                end
+                push!(movie_reviews, review_text)
+            catch e
+                print("\nERROR 2:\n$e\n")
             end
-            push!(movie_reviews, review_text)
         end
     end
     return movie_reviews
@@ -151,10 +240,10 @@ end
 
 function metric_converter(metric::String)
 
-    number;
+    number = nothing;
     try
         metric = lowercase(metric)
-        multipliers = Dict('k' => 1e3, 'm' => 1e6, 'b' => 1e9)
+        multipliers = Dict("k" => 1e3, "m" => 1e6, "b" => 1e9)
 
         suffix = str[end]
         number_str = str[1:end-1]
@@ -164,7 +253,8 @@ function metric_converter(metric::String)
         if haskey(multipliers, suffix)
             number *= multipliers[suffix]
         end
-    catch
+    catch e
+        print("\nERROR METRIC CONVERTER:\n$e\n")
     end
 
     return number
@@ -173,8 +263,13 @@ end
 
 function insert(contents::Array)
     try
-        insert_many_contents("localhost", 27017, "letterbox_data", "movies", contents)
-    catch
+        if length(contents) > 0
+            # println("")
+            # insert_many_contents(Mongo("localhost", 27017), "letterbox_data", "movies", contents)
+            insert_many_contents("localhost", 27017, "letterbox_data", "movies", contents)
+        end
+    catch e
+        print("\nERROR:\n$e\n")
     end
 end
 
@@ -188,7 +283,7 @@ function get_html(url::String)
         try
             response = HTTP.request("GET", url, headers)
             body = String(response.body)
-            html = bs4(body)
+            html = bs4(body, features="html.parser")
 
             return html
         catch
@@ -196,6 +291,7 @@ function get_html(url::String)
         end
     end
 end
+
 
 function main()
     process_scraping(content_type, base_url)
