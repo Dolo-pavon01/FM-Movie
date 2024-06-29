@@ -256,16 +256,16 @@ def complete_data(df_data, df_tmdb):
     log(f"Completing data for {df_data.shape[0]} rows:\n")
 
     fields = [
-		# 'releaseDate',
+		'releaseDate',
 		'votes',
 		'rating',
 		'duration',
         'genres',
-        # 'country',
-        # 'keywords',
-        # 'cast',
-        # 'companies',
-        # 'directors',
+        'country',
+        'keywords',
+        'cast',
+        'companies',
+        'directors',
     ]
 
     for index, field in enumerate(fields):
