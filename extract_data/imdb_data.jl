@@ -42,7 +42,7 @@ function process_imdb_payload(imdb_file::String, callback::Function)
         imdb_data = getDataFromURLFile(imdb_file)
         filename_collection = split(imdb_file, "/")
         filename_collection = replace(filename_collection[length(filename_collection)], ".tsv.gz" => "")
-        filename_collection = "TEST____" * replace(filename_collection, "." => "_")
+        filename_collection = "TEST2____" * replace(filename_collection, "." => "_")
 
         index_header = 1
         header = []
@@ -105,7 +105,11 @@ function upload_database(mongo::Mongo, database::String)
     end
 end
 
-
+function upload_database(host::String, port::Int, database::String)
+    return function (collection::String, contents::Array)
+        insert_many_contents(host, port, database, collection, contents)
+    end
+end
 
 function main()
 
@@ -125,7 +129,10 @@ function main()
         port = 27017
         database = "imdb_data"
         mongo = Mongo(host, port)
+
+        # if you want to use mongo with threads, comment de firts line below and uncomment the  nextone
         proccess_imdb_files(imdb_files, upload_database(mongo, database))
+        # proccess_imdb_files(imdb_files, upload_database(host, port, database))
 
     catch error
         println(error)
