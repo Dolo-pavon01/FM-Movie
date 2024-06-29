@@ -1,9 +1,8 @@
 include("../BBDD/mongo_connection.jl")
 using DataFrames
-# import DataFrames: aggregate, Aggregate
-import Tables: rows
 using CSV
 using Dates
+import Tables: rows
 
 
 function log(x) println("$(now()) | $x") end
@@ -20,6 +19,7 @@ col_titleratings = "imdbTitleRatings"
 col_namebasics = "imdbNameBasics"
 col_datatp = "data_tp_final"
 
+
 imdbs_list = [
     "tt10133702",
     "tt10333266",
@@ -31,9 +31,63 @@ imdbs_list = [
     "tt11244166",
     "tt11257606",
     "tt11281192",
-    ]
+]
     
 mongo = Mongo("localhost", 27017)
+
+
+function complete_imdb_nan(df)
+    for col_name in names(df)
+        try
+            df[:, col_name] = replace.(df[:, col_name], "\\N" => missing)
+            df[:, col_name] = replace.(df_items[:, col_name], "\\\\N" => missing)
+        catch e
+            nothing
+        end
+    end
+    return df
+end
+
+
+
+function isnull(value)
+    if ismissing(value) || value===nothing || value=="" || value=="nothing"
+        return true
+    end
+    return false
+end
+
+
+function set_company_names(value)
+    if value === nothing
+        return nothing
+    end
+    companies = String[]
+    for i in value
+        push!(companies, String(i["Name"]))
+    end
+    return companies
+end
+
+
+function set_country(value)
+    if value === nothing
+        return nothing
+    end
+    return value[1]
+end
+
+
+function set_string_array(value)
+    if value === nothing
+        return nothing
+    end
+    values_list = String[]
+    for i in value
+        push!(values_list, String(i))
+    end
+    return values_list
+end
 
 
 function get_data_from_mongo(database::String, collection::String, query::Dict, projection::Dict)
@@ -81,23 +135,11 @@ function get_data_from_mongo(database::String, collection::String, query::Dict, 
         dropmissing!(df_items, :imdbId);
     end
 
-    for col_name in names(df_items)
-        try
-            df_items[:, col_name] = replace.(df_items[:, col_name], "\\N" => nothing)
-            df_items[:, col_name] = replace.(df_items[:, col_name], "\\\\N" => nothing)
-        catch e
-            nothing
-        end
-    end
+    df_items = complete_imdb_nan(df_items)
 
     # log("\t$(nrow(df_items)) total items got.\n")
     return df_items
-
 end
-
-
-# query_imdbs = Dict()
-query_imdbs = Dict( "imdbId" => Dict( "\$in" => imdbs_list ) )
 
 
 # #### Imdb TitleBasics data
@@ -142,9 +184,7 @@ function get_title_ratings(df::DataFrame)
     df_titleratings = get_data_from_mongo(db_testing, col_titleratings, query, projection)
     log("$(nrow(df_titleratings)) items from $col_titleratings ") # \n$(first(df_titleratings, 2))\n")
     df = leftjoin(df, df_titleratings, on=:imdbId) # Add columns rating, votes
-    df_titleratings = nothing
     # log("\t -->> $(nrow(df)) ITEMS <<--\n")
-
     # log("\n\n$df\n\n")
     return df
 end
@@ -158,7 +198,7 @@ function get_reviews(df::DataFrame)
             df (DataFrame) with columns (at least) imdbId
         Returns with original dataframe with added column reviews
     =#
-    query = Dict()
+    # query = Dict()
     query = Dict( "imdb_id" => Dict( "\$in" => imdbs_list ) )
     projection = Dict(
         "_id" => 0,
@@ -166,12 +206,10 @@ function get_reviews(df::DataFrame)
         "reviews" => "\$reviews_analysis.compound",
     )
     df_collaborativedb = get_data_from_mongo(db_testing, col_comments_rating, query, projection)
-    df_collaborativedb = combine(groupby(df_collaborativedb, :imdbId), :reviews => maximum => :reviews)
+    df_collaborativedb = combine(groupby(df_collaborativedb, :imdbId), :reviews => maximum => :reviews) # EXPLICAR
     log("$(nrow(df_collaborativedb)) items from $col_comments_rating ") # \n$(first(df_collaborativedb, 2))\n")
     df = leftjoin(df, df_collaborativedb, on=:imdbId)
-    df_collaborativedb = nothing
     # log("\t -->> $(nrow(df)) ITEMS <<--\n")
-
     # log("\n\n$df\n\n")
     return df
 end
@@ -210,52 +248,10 @@ function get_name_basics(df::DataFrame)
         push!(df_directors, ( directors=names_vector, imdbId=imdb ))
     end
     df = leftjoin(df, df_directors, on=:imdbId)
-    df_namebasics = nothing
-    df_directors = nothing
-    # log("\t -->> $(nrow(df)) ITEMS <<--\n")
 
+    # log("\t -->> $(nrow(df)) ITEMS <<--\n")
     # log("\n\n$df\n\n")
     return df
-end
-
-
-function isnull(value)
-    if ismissing(value) || value===nothing || value==""
-        return true
-    end
-    return false
-end
-
-
-function set_company_names(value)
-    if value === nothing
-        return nothing
-    end
-    companies = String[]
-    for i in value
-        push!(companies, String(i["Name"]))
-    end
-    return companies
-end
-
-
-function set_country(value)
-    if value === nothing
-        return nothing
-    end
-    return value[1]
-end
-
-
-function set_string_array(value)
-    if value === nothing
-        return nothing
-    end
-    values_list = String[]
-    for i in value
-        push!(values_list, String(i))
-    end
-    return values_list
 end
 
 
@@ -291,8 +287,6 @@ function get_imdb_complete(df::DataFrame)
     df = leftjoin(df, df_imdb_complete, on=:imdbId) # Add columns: cast, country, releaseDate, keywords, companies
 
     # log("\t -->> $(nrow(df)) ITEMS <<--\n")
-    df_imdb_complete = nothing
-
     # log("\n\n$df\n\n")
     return df
 end
@@ -354,7 +348,7 @@ function complete_data(df, df_tmdb)
     index = 0
     for field in fields
         index += 1
-        # log("\tField '$field' $(index)/$(length(fields))")
+        log("\tField '$field' $(index)/$(length(fields))")
         # log("$(names(df))")
 
         # log("\t\tGetting null data from df")
@@ -413,6 +407,49 @@ function insert_to_mongo(df)
 end
 
 
+function set_nothing_to_missing(df::DataFrame)
+
+    println("\n\n")
+    log("Setting nothing values to missing.")
+    columns = names(df)[1:7]
+    # columns = [ "duration" ]
+
+    # df = df[:, [ "duration", "year", "type", "imdbId", "reviews", "rating" ] ]
+    println("\n\n$( df[ : , columns ] )\n\n")
+
+    index, n = 1, length(columns)
+    for column in columns
+        log("\tColumn '$column' $index/$n")
+        index += 1
+        df_nulls = nothing
+        try
+            df_nulls = df[ [ isnull(i) for i in df[:,column] ] , : ]
+        catch
+            print("\n\nERROR GETTING NULL VALUES FOR COLUMN:\n$(df[:,column])\n\n")
+            continue
+        end
+        # println("\nNULL VALUES\n$df_nulls\n")
+        if isempty(df_nulls)
+            log("\t\tNo nulls values\n\n")
+            continue
+        end
+        println("\t\tNULL VALUES\n$df_nulls\n\n")
+
+        # df_not_nulls = df[ [  i!="nothing" for i in df[:,column] ] , : ]
+        # println("\nNOT NULL VALUES\n$df_not_nulls\n")
+
+        # df_nulls[ ! , column ] .= missing
+        # println("\nNEW NULL VALUES\n$df_nulls\n")
+
+        # df = vcat( df_not_nulls , df_nulls )
+    end
+
+    # println("\n\n$df\n\n")
+
+	return df
+end
+
+
 function main()
 
     # df = DataFrame()
@@ -435,11 +472,15 @@ function main()
     # df = df.replace(to_replace="\\\\N", value=nothing)
 
     # CSV.write("out3.csv", df, transform=(col, val) -> something(val, missing))
+    
+    df = set_nothing_to_missing(df)
 
-    insert_to_mongo(df)
+    # insert_to_mongo(df)
 
-    df = df[ [  !(isnull.(i)) for i in df[:, :rating] ] , : ]
-    CSV.write(csv_filename, df)
+    # df = df[ [  !(isnull(i)) for i in df[:, :rating] ] , : ]
+    # CSV.write(csv_filename, df)
+
+    # println("\n\n$df\n\n")
 
 end
 
@@ -448,3 +489,23 @@ if abspath(PROGRAM_FILE) == @__FILE__
     main()
 end
 
+
+#=
+
+VIDEO:
+
+5 minutos sobre historia, razon de ser, uso.
+Muestra y explicación de código: 
+    Demostrar que sabemos programar en el lenguaje.
+    No mostrar cosas triviales (no es necesario código super complejo).
+Hablar coloquialmente para hacerlo dinamico y entretenido.
+
+
+Hacer subsets para las ejecuciones a mostrar en el video y para que lo pueda ejecutar el profe.
+Realizar un proceso paralelo para que guarde y lea CSVs (truncados para hacerlos pequeños).
+Para hacer eso filtrar por una lista de imdb_ids.
+
+Comparacion OZ con Julia
+    Pattern matching
+
+=#
