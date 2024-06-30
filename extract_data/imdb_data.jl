@@ -1,10 +1,15 @@
+module module_imdb_data
+
 using HTTP
+using DataFrames
+using CSV
 using CodecZlib
 using Dates
 include("../BBDD/mongo_connection.jl")
 
 hora_start_script = now()
-println("Fecha y hora actual: ", hora_start_script)
+
+limit_to_csv = 10000
 
 
 function getDataFromURLFile(imdb_file::String)
@@ -42,7 +47,7 @@ function process_imdb_payload(imdb_file::String, callback::Function)
         imdb_data = getDataFromURLFile(imdb_file)
         filename_collection = split(imdb_file, "/")
         filename_collection = replace(filename_collection[length(filename_collection)], ".tsv.gz" => "")
-        filename_collection = "TEST2____" * replace(filename_collection, "." => "_")
+        filename_collection = "imdb_"*replace(filename_collection, "." => "_")
 
         index_header = 1
         header = []
@@ -59,6 +64,7 @@ function process_imdb_payload(imdb_file::String, callback::Function)
             if index_header == 1
                 header = linea
                 index_header = 0
+                continue
             elseif counter >= limit
                 len = len + counter
                 print("Insertando en $(filename_collection)   ::::::  Cantidad de Elementos Insertados al momento: $(len)\r")
@@ -68,6 +74,10 @@ function process_imdb_payload(imdb_file::String, callback::Function)
             end
             push!(imdb_payload, proccess_data(linea, header))
 
+            if len >= limit_to_csv
+                return
+            end
+
             counter = counter + 1
         end
 
@@ -76,7 +86,7 @@ function process_imdb_payload(imdb_file::String, callback::Function)
             println("Insertando en $(filename_collection)   ::::::  Cantidad de Elementos Insertados al momento: $(len)")
             callback(filename_collection, imdb_payload)
         end
-    catch
+    catch e 
         rethrow("Error proccesing data: $e")
     end
 
@@ -99,9 +109,10 @@ function proccess_imdb_files(imdb_files::Vector{String}, callback::Function)
 end
 
 
-function upload_database(mongo::Mongo, database::String)
+function upload_csv()
     return function (collection::String, contents::Array)
-        insert_many_contents(mongo, database, collection, contents)
+        df  = vcat(DataFrame.(contents)...)
+        CSV.write("./data_output/"*collection*".csv", df)
     end
 end
 
@@ -111,18 +122,22 @@ function upload_database(host::String, port::Int, database::String)
     end
 end
 
-function main()
+function process_IMDB()
 
     try
 
+        println("Fecha y hora actual: ", hora_start_script)
+        
+
+
         imdb_files = [
-            "https://datasets.imdbws.com/title.ratings.tsv.gz",
-            "https://datasets.imdbws.com/title.episode.tsv.gz",
-            "https://datasets.imdbws.com/title.basics.tsv.gz",
-            "https://datasets.imdbws.com/title.crew.tsv.gz",
-            "https://datasets.imdbws.com/name.basics.tsv.gz",
-            "https://datasets.imdbws.com/title.akas.tsv.gz",
-            "https://datasets.imdbws.com/title.principals.tsv.gz"
+            # "https://datasets.imdbws.com/title.ratings.tsv.gz",
+            # "https://datasets.imdbws.com/title.episode.tsv.gz",
+            # "https://datasets.imdbws.com/title.basics.tsv.gz",
+            # "https://datasets.imdbws.com/title.crew.tsv.gz",
+            # "https://datasets.imdbws.com/name.basics.tsv.gz",
+            # "https://datasets.imdbws.com/title.akas.tsv.gz",
+            # "https://datasets.imdbws.com/title.principals.tsv.gz"
         ]
 
         host = "localhost"
@@ -131,8 +146,8 @@ function main()
         mongo = Mongo(host, port)
 
         # if you want to use mongo with threads, comment de firts line below and uncomment the  nextone
-        proccess_imdb_files(imdb_files, upload_database(mongo, database))
-        # proccess_imdb_files(imdb_files, upload_database(host, port, database))
+        # proccess_imdb_files(imdb_files, upload_csv())
+        proccess_imdb_files(imdb_files, upload_database(host, port, database))
 
     catch error
         println(error)
@@ -140,5 +155,8 @@ function main()
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    main()
+    process_IMDB()
 end
+
+export process_IMDB
+end #module_imdb_data

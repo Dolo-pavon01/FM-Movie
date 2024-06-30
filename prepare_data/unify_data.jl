@@ -1,3 +1,5 @@
+module module_unify_data
+
 include("../BBDD/mongo_connection.jl")
 using DataFrames
 using CSV
@@ -450,7 +452,7 @@ function set_nothing_to_missing(df::DataFrame)
 end
 
 
-function main()
+function process_UNIFY()
 
     # df = DataFrame()
 |
@@ -486,7 +488,7 @@ end
 
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    main()
+    process_UNIFY()
 end
 
 
@@ -509,3 +511,6 @@ Comparacion OZ con Julia
     Pattern matching
 
 =#
+
+export process_UNIFY
+end # module_unify_data

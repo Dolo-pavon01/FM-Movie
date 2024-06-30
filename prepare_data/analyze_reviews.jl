@@ -1,3 +1,4 @@
+module module_analyze_reviews
 include("../BBDD/mongo_connection.jl")
 import VaderSentiment: SentimentIntensityAnalyzer
 
@@ -109,11 +110,14 @@ function reviews_analysis()
 end
 
 
-function main()
+function process_ANALYZE()
     reviews_analysis()
 end
 
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    main()
+    process_ANALYZE()
 end
+
+export process_ANALYZE
+end #module_analyze_reviews

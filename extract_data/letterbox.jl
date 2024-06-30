@@ -1,4 +1,7 @@
+module module_letterbox
 using Dates
+using DataFrames
+using CSV
 import HTTP
 import Formatting
 import Base.Threads.@threads
@@ -14,13 +17,13 @@ content_type = "movie"
 
 
 function process_scraping(content_type::String, url::String)
-    page_step = 2
-    n_pages = get_page_numbers(url)
-    n_pages = 10
+    page_step = 5 # change to 100 
+    # n_pages = get_page_numbers(url) 
+    n_pages = 5 #for testing
     println("n_pages :: $n_pages")
 
     for i in 1:page_step:n_pages
-        println([x for x in i:(i+page_step)])
+        # println([x for x in i:(i+page_step)])
         crawlers(url, [x for x in i:(i+page_step)], content_type)
     end
 
@@ -52,7 +55,14 @@ function proccess_crawlers(url::String, pages_range, content_type::String)
             if isnothing(item_result) continue end
             push!(crawlers_item_result, item_result)
         end
-        insert(crawlers_item_result)
+
+        append = true
+        print(pages_range[1])
+        if pages_range[1] <= 1
+            
+            append = false
+        end 
+        insert(crawlers_item_result, append)
     end
 end
 
@@ -208,7 +218,7 @@ end
 
 function get_comments(url::String)::Array
     movie_reviews = []
-    comment_page_limit = 1
+    comment_page_limit = 1 #change to 20 if you want to et more comment, it gets 12 comments by page a most
     for i in 1:comment_page_limit
         all_reviews = []
         try
@@ -261,12 +271,12 @@ function metric_converter(metric::String)
 end
 
 
-function insert(contents::Array)
+function insert(contents::Array, is_append::Bool=false)
     try
         if length(contents) > 0
-            # println("")
-            # insert_many_contents(Mongo("localhost", 27017), "letterbox_data", "movies", contents)
-            insert_many_contents("localhost", 27017, "letterbox_data", "movies", contents)
+            # insert_many_contents("localhost", 27017, "letterbox_data", "movies", contents)
+            df  = vcat(DataFrame.(contents)...)
+            CSV.write("./data_output/letterbox.csv", df, append=is_append)
         end
     catch e
         print("\nERROR:\n$e\n")
@@ -293,11 +303,18 @@ function get_html(url::String)
 end
 
 
-function main()
+function process_Letterbox()
     process_scraping(content_type, base_url)
 end
 
+function print_prueba()
+    println("LLAMASTE A LA FUNCION")
+end
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    main()
+    process_Letterbox()
 end
+
+
+export process_Letterbox
+end # module_letterbox
