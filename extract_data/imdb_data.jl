@@ -1,5 +1,3 @@
-module module_imdb_data
-
 using HTTP
 using DataFrames
 using CSV
@@ -7,9 +5,11 @@ using CodecZlib
 using Dates
 include("../BBDD/mongo_connection.jl")
 
-hora_start_script = now()
 
-limit_to_csv = 10000
+hora_start_script = now()
+println("Fecha y hora actual: ", hora_start_script)
+limit_to_csv = 100000
+
 
 
 function getDataFromURLFile(imdb_file::String)
@@ -75,6 +75,7 @@ function process_imdb_payload(imdb_file::String, callback::Function)
             push!(imdb_payload, proccess_data(linea, header))
 
             if len >= limit_to_csv
+                println()
                 return
             end
 
@@ -110,9 +111,12 @@ end
 
 
 function upload_csv()
+    is_append = false
     return function (collection::String, contents::Array)
         df  = vcat(DataFrame.(contents)...)
-        CSV.write("./data_output/"*collection*".csv", df)
+        print(is_append)
+        CSV.write("./data_output/"*collection*".csv", df, append = is_append)
+        is_append = true
     end
 end
 
@@ -122,16 +126,12 @@ function upload_database(host::String, port::Int, database::String)
     end
 end
 
-function process_IMDB()
+function main()
 
     try
 
-        println("Fecha y hora actual: ", hora_start_script)
-        
-
-
         imdb_files = [
-            # "https://datasets.imdbws.com/title.ratings.tsv.gz",
+            "https://datasets.imdbws.com/title.ratings.tsv.gz",
             # "https://datasets.imdbws.com/title.episode.tsv.gz",
             # "https://datasets.imdbws.com/title.basics.tsv.gz",
             # "https://datasets.imdbws.com/title.crew.tsv.gz",
@@ -143,11 +143,11 @@ function process_IMDB()
         host = "localhost"
         port = 27017
         database = "imdb_data"
-        mongo = Mongo(host, port)
+        # mongo = Mongo(host, port)
 
         # if you want to use mongo with threads, comment de firts line below and uncomment the  nextone
-        # proccess_imdb_files(imdb_files, upload_csv())
-        proccess_imdb_files(imdb_files, upload_database(host, port, database))
+        proccess_imdb_files(imdb_files, upload_csv())
+        # proccess_imdb_files(imdb_files, upload_database(host, port, database))
 
     catch error
         println(error)
@@ -155,8 +155,5 @@ function process_IMDB()
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    process_IMDB()
+    main()
 end
-
-export process_IMDB
-end #module_imdb_data
