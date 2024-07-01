@@ -42,8 +42,8 @@ function main()
     process_Letterbox()
 
 
-    # process_ANALYZE()
-    # process_UNIFY()
+    process_ANALYZE()
+    process_UNIFY()
 end
 
 

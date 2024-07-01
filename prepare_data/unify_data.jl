@@ -2,43 +2,19 @@ module module_unify_data
 
 include("../BBDD/mongo_connection.jl")
 using DataFrames: DataFrame, replace, ismissing, names, values, nrow, vcat, dropmissing, transform!, 
-                    ByRow, leftjoin, combine, groupby, filter, occursin, unique, isempty, select!, Not
+                    ByRow, leftjoin, combine, groupby, filter, unique, isempty, select!, Not
 using CSV
 using Dates
 import Tables: rows
 
 
-csv_filename = "tp_data_final.csv"
+CSV_UNIFIEDDATA = "tp_data_final.csv"
 
-db_testing = "testing"
-
-col_imdb_complete = "imdb_complete"
-col_tmdb_complete = "tmdb_complete"
-col_comments_rating = "collaborative_db"
-col_titlebasics = "imdbTitleBasics"
-col_titleratings = "imdbTitleRatings"
-col_namebasics = "imdbNameBasics"
-col_datatp = "data_tp_final"
+DB_TESTING = "testing"
+MONGO_CONN = Mongo("localhost", 27017)
 
 
-imdbs_list_test = [
-    "tt10133702",
-    "tt10333266",
-    "tt10350420",
-    "tt10399902",
-    "tt10402396",
-    "tt10469410",
-    "tt10712472",
-    "tt11244166",
-    "tt11257606",
-    "tt11281192",
-    "\\N"
-]
-    
-mongo = Mongo("localhost", 27017)
-
-
-function log(x) println("$(now()) | $x") end
+log(x) = println("$(Dates.format(now(), "yyyy-mm-ddTHH:MM:SS")) | $x")
 
 
 function set_nulls_to_missing(df::DataFrame)
@@ -111,7 +87,7 @@ function get_data_from_mongo(database::String, collection::String, query::Dict, 
         Dict( "\$count" => "count" )
     ]
     
-    result_count = run_aggregate(mongo, database, collection, pipeline)
+    result_count = run_aggregate(MONGO_CONN, database, collection, pipeline)
     if length(result_count) == 0
         log("\tNo items found in '$database.$collection'.\n")
         return DataFrame()
@@ -131,10 +107,10 @@ function get_data_from_mongo(database::String, collection::String, query::Dict, 
             Dict( "\$project" => projection ),
         ]
         
-        items = run_aggregate(mongo, database, collection, pipeline)
+        items = run_aggregate(MONGO_CONN, database, collection, pipeline)
         
         df_current = DataFrame(items)
-        # df_current = vcat(DataFrame.(items)...)
+        df_current = vcat(DataFrame.(items)...)
         
         df_items = vcat( df_items, df_current )
         
@@ -170,8 +146,9 @@ function get_title_basics()
         "duration" => "\$runtimeMinutes",
         "genres" => "\$genres",
     )
-    df_titlebasics = get_data_from_mongo(db_testing, col_titlebasics, query, projection)
-    transform!(df_titlebasics, :genres .=> ByRow(x -> set_array_from_string(x)) .=> :genres)
+    col_titlebasics = "imdbTitleBasics"
+    df_titlebasics = get_data_from_mongo(DB_TESTING, col_titlebasics, query, projection)
+    transform!(df_titlebasics, :genres => ByRow(x -> set_array_from_string(x)) => :genres)
 
     return df_titlebasics
 end
@@ -192,7 +169,8 @@ function get_title_ratings(df::DataFrame)
         "rating" => "\$averageRating",
         "votes" => "\$numVotes",
     )
-    df_titleratings = get_data_from_mongo(db_testing, col_titleratings, query, projection)
+    col_titleratings = "imdbTitleRatings"
+    df_titleratings = get_data_from_mongo(DB_TESTING, col_titleratings, query, projection)
     df = leftjoin(df, df_titleratings, on=:imdbId) # Add columns rating, votes
     
     return df
@@ -200,7 +178,6 @@ end
 
 
 # #### Letterboxd reviews data 
-# Buscar ultima fecha (createdAt) y filtrar asi
 function get_reviews(df::DataFrame)
     #=
         Arguments
@@ -214,7 +191,8 @@ function get_reviews(df::DataFrame)
         "imdbId" => "\$imdb_id",
         "reviews" => "\$reviews_analysis.compound",
     )
-    df_collaborativedb = get_data_from_mongo(db_testing, col_comments_rating, query, projection)
+    col_comments_rating = "collaborative_db"
+    df_collaborativedb = get_data_from_mongo(DB_TESTING, col_comments_rating, query, projection)
     # println("\n\nUNIQUE BY imdbId: $(nrow(unique(df_collaborativedb, :imdbId)))\n\n")
     df_collaborativedb = combine(groupby(df_collaborativedb, :imdbId), :reviews => maximum => :reviews)
     # println("\n\nN ROWS AFTER GROUPING: $(nrow(df_collaborativedb))\n\n")
@@ -239,15 +217,19 @@ function get_name_basics(df::DataFrame)
         "name" => "\$primaryName",
         "titles" => "\$knownForTitles"
     )
-    
-    df_namebasics = get_data_from_mongo(db_testing, col_namebasics, query, projection)
+    col_namebasics = "imdbNameBasics"
+    df_namebasics = get_data_from_mongo(DB_TESTING, col_namebasics, query, projection)
     # CSV.write("names_test.csv", df_namebasics)
     # df_namebasics = DataFrame( CSV.read("names_test.csv", DataFrame) )
     
+    df_namebasics = dropmissing(df_namebasics, :profession);
+    df_namebasics = dropmissing(df_namebasics, :name);
+    df_namebasics = dropmissing(df_namebasics, :titles);
     df_namebasics = filter(row -> occursin( "director" , row.profession ) , df_namebasics)
     df_namebasics = df_namebasics[ : , [:name, :titles] ]
-    transform!(df_namebasics, :titles .=> ByRow(x -> [ String(i) for i in split(x, ",") ]) .=> :titles)
+    transform!(df_namebasics, :titles => ByRow(x -> set_array_from_string(x)) => :titles)
     df_namebasics = DataFrame( [ ( name=row["name"], imdbId=val ) for row in eachrow(df_namebasics) for val in row[:titles] ] )
+
     # df_namebasics = filter(row -> row.imdbId in imdbs_list_test , df_namebasics)
     df_directors = DataFrame()
     for i in groupby( df_namebasics, :imdbId )
@@ -256,6 +238,8 @@ function get_name_basics(df::DataFrame)
         push!(df_directors, ( directors=names_vector, imdbId=imdb ))
     end
     df = leftjoin(df, df_directors, on=:imdbId)
+
+    # println("\n\n$(first(df_directors, 30))\n\n")
 
     return df
 end
@@ -279,12 +263,13 @@ function get_imdb_complete(df::DataFrame)
         "keywords" => "\$Keywords",
         "companies" => "\$Companies",
     )
-    df_imdb_complete = get_data_from_mongo(db_testing, col_imdb_complete, query, projection)
+    col_imdb_complete = "imdb_complete"
+    df_imdb_complete = get_data_from_mongo(DB_TESTING, col_imdb_complete, query, projection)
 
-    transform!(df_imdb_complete, :companies .=> ByRow(x -> set_company_names(x)) .=> :companies)
-    transform!(df_imdb_complete, :country .=> ByRow(x -> set_country(x)) .=> :country)
+    transform!(df_imdb_complete, :companies => ByRow(x -> set_company_names(x)) => :companies)
+    transform!(df_imdb_complete, :country => ByRow(x -> set_country(x)) => :country)
     for col_name in [ "cast", "keywords" ]
-        transform!(df_imdb_complete, col_name .=> ByRow(x -> reset_string_array(x)) .=> col_name)
+        transform!(df_imdb_complete, col_name => ByRow(x -> reset_string_array(x)) => col_name)
     end
     df = leftjoin(df, df_imdb_complete, on=:imdbId) # Add columns: cast, country, releaseDate, keywords, companies
 
@@ -310,13 +295,14 @@ function get_tmdb_complete()
         "companies" => "\$Companies",
         "directors" => "\$Directors"
     )
-    df_tmdb = get_data_from_mongo(db_testing, col_tmdb_complete, query, projection)
+    col_tmdb_complete = "tmdb_complete"
+    df_tmdb = get_data_from_mongo(DB_TESTING, col_tmdb_complete, query, projection)
     df_tmdb = unique(df_tmdb, :imdbId)
 
-    transform!(df_tmdb, :companies .=> ByRow(x -> set_company_names(x)) .=> :companies)
-    transform!(df_tmdb, :country .=> ByRow(x -> set_country(x)) .=> :country)
+    transform!(df_tmdb, :companies => ByRow(x -> set_company_names(x)) => :companies)
+    transform!(df_tmdb, :country => ByRow(x -> set_country(x)) => :country)
     for col_name in [ "genres", "companies", "cast", "directors", "keywords" ]
-        transform!(df_tmdb, col_name .=> ByRow(x -> reset_string_array(x)) .=> col_name)
+        transform!(df_tmdb, col_name => ByRow(x -> reset_string_array(x)) => col_name)
     end
 
     return df_tmdb
@@ -383,8 +369,9 @@ function insert_to_mongo(df::DataFrame)
 
     items_dict = [ Dict(col => df[row, col] for col in names(df)) for row in 1:nrow(df) ]
 
-    log("\tInserting to mongo...")
-    insert_many_contents(mongo, db_testing, col_datatp, items_dict)
+    log("\tInserting to MongoDB...")
+    col_datatp = "data_tp_final"
+    insert_many_contents(MONGO_CONN, DB_TESTING, col_datatp, items_dict)
 end
 
 
@@ -396,6 +383,7 @@ function process_UNIFY()
     df = get_reviews(df)
     df = get_name_basics(df)
     df = get_imdb_complete(df)
+    
     df_tmdb = get_tmdb_complete()
     
     df = complete_data(df, df_tmdb)
@@ -403,7 +391,7 @@ function process_UNIFY()
     df_ratings_notnull = dropmissing(df, :rating);
     
     insert_to_mongo(df)
-    CSV.write(csv_filename, df_ratings_notnull)
+    CSV.write(CSV_UNIFIEDDATA, df_ratings_notnull)
 
     # println("\n\n$df\n\n")
 end

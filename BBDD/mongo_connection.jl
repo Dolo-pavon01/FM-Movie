@@ -33,11 +33,11 @@ function find_content(mongo::Mongo, database::String, collection::String, query:
     return result
 end
 
-function find_many_contents(mongo::Mongo, database::String, collection::String, query::Dict=Dict(), projection::Dict=Dict(), sort::Dict=Dict())::Array
+function find_many_contents(mongo::Mongo, database::String, collection::String; query::Dict=Dict(), projection::Dict=Dict(), sort::Dict=Dict(), limit::Int64=0)::Array
     try
         mongo_collection = mongo.connection[database][collection]
         query_bson = BSON(query)
-        options_dict = Dict("projection" => projection, "sort" => sort)
+        options_dict = Dict("projection" => projection, "sort" => sort, "limit" => limit)
         options_bson = BSON(options_dict)
         result = find(mongo_collection, query_bson, options=options_bson)
         if !isnothing(result)
