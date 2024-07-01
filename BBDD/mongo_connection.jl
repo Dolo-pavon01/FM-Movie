@@ -92,7 +92,7 @@ end
 
 function insert_many_contents(host::String, port::Int, database::String, collection::String, contents::Array)
     try
-
+        
         chunks = Iterators.partition(contents, length(contents) ÷ Threads.nthreads())
         tasks = map(chunks) do chunk
             Threads.@spawn insert_contents_without_connection(chunk, host, port, database, collection)

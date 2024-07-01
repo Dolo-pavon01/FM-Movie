@@ -14,10 +14,10 @@ db_testing = "testing"
 
 col_imdb_complete = "imdb_complete"
 col_tmdb_complete = "tmdb_complete"
-col_comments_rating = "collaborative_db"
-col_titlebasics = "imdbTitleBasics"
-col_titleratings = "imdbTitleRatings"
-col_namebasics = "imdbNameBasics"
+col_comments_rating = "reviews"
+col_titlebasics = "imdb_title_basics"
+col_titleratings = "imdb_title_ratings"
+col_namebasics = "imdb_name_basics"
 col_datatp = "data_tp_final"
 
 
@@ -111,37 +111,45 @@ function get_data_from_mongo(database::String, collection::String, query::Dict, 
         Dict( "\$count" => "count" )
     ]
     
-    result_count = run_aggregate(mongo, database, collection, pipeline)
-    if length(result_count) == 0
-        log("\tNo items found in '$database.$collection'.\n")
-        return DataFrame()
-    end
-    total_items = result_count[1]["count"]
-    log("\tThere are $total_items items to get.")
+    # result_count = run_aggregate(mongo, database, collection, pipeline)
+    # if length(result_count) == 0
+    #     log("\tNo items found in '$database.$collection'.\n")
+    #     return DataFrame()
+    # end
+    # total_items = result_count[1]["count"]
+    # log("\tThere are $total_items items to get.")
 
     step = 1000000
     n_got = 0
     df_items = DataFrame()
 
-    for start in 0 : step : total_items+1
-        pipeline = [
-            Dict( "\$match" => query ),
-            Dict( "\$skip" => start ),
-            Dict( "\$limit" => step ),
-            Dict( "\$project" => projection ),
-        ]
-        
-        items = run_aggregate(mongo, database, collection, pipeline)
-        
-        df_current = DataFrame(items)
-        # df_current = vcat(DataFrame.(items)...)
-        
-        df_items = vcat( df_items, df_current )
-        
-        n_got += length(items)
-        log("\t\t$n_got / $total_items")
-    end
+    file_path = "./data_output/"*collection*".csv"
+    df_items = CSV.read(file_path, DataFrame)
+    delete!(projection, "_id")
+    df_items = DataFrame([k => df_items[:,replace(v, "\$"=>"")] for (k,v) in projection])
+
     
+
+
+    # for start in 0 : step : total_items+1
+    #     pipeline = [
+    #         Dict( "\$match" => query ),
+    #         Dict( "\$skip" => start ),
+    #         Dict( "\$limit" => step ),
+    #         Dict( "\$project" => projection ),
+    #     ]
+        
+    #     # items = run_aggregate(mongo, database, collection, pipeline)
+        
+    #     df_current = DataFrame(items)
+    #     # df_current = vcat(DataFrame.(items)...)
+        
+    #     df_items = vcat( df_items, df_current )
+        
+    #     n_got += length(items)
+    #     log("\t\t$n_got / $total_items")
+    # end
+
     df_items = set_nulls_to_missing(df_items)
     log("\t$(nrow(df_items)) total items got")
     
@@ -212,7 +220,7 @@ function get_reviews(df::DataFrame)
     projection = Dict(
         "_id" => 0,
         "imdbId" => "\$imdb_id",
-        "reviews" => "\$reviews_analysis.compound",
+        "reviews" => "\$scores",
     )
     df_collaborativedb = get_data_from_mongo(db_testing, col_comments_rating, query, projection)
     # println("\n\nUNIQUE BY imdbId: $(nrow(unique(df_collaborativedb, :imdbId)))\n\n")
@@ -298,7 +306,7 @@ function get_tmdb_complete()
     query = Dict( "imdbId" => Dict( "\$ne" => nothing ) )
     projection = Dict(
         "_id" => 0,
-        "imdbId" => 1,
+        "imdbId" => "\$imdbId",
         "releaseDate" => "\$ReleaseDate",
         "votes" => "\$vote_count",
         "rating" => "\$vote_average",

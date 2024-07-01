@@ -1,3 +1,4 @@
+module module_imdb_data
 using HTTP
 using DataFrames
 using CSV
@@ -7,7 +8,6 @@ include("../BBDD/mongo_connection.jl")
 
 
 hora_start_script = now()
-println("Fecha y hora actual: ", hora_start_script)
 limit_to_csv = 100000
 
 
@@ -47,13 +47,13 @@ function process_imdb_payload(imdb_file::String, callback::Function)
         imdb_data = getDataFromURLFile(imdb_file)
         filename_collection = split(imdb_file, "/")
         filename_collection = replace(filename_collection[length(filename_collection)], ".tsv.gz" => "")
-        filename_collection = "imdb_"*replace(filename_collection, "." => "_")
+        filename_collection = "imdb_" * replace(filename_collection, "." => "_")
 
         index_header = 1
         header = []
 
         counter = 0
-        limit = 10000
+        limit = 100000
         len = 0
         imdb_payload = Dict[]
 
@@ -62,7 +62,7 @@ function process_imdb_payload(imdb_file::String, callback::Function)
         for linea in eachline(imdb_data)
             linea = split(linea, "\t")
             if index_header == 1
-                header = linea
+                header = replace(linea, "tconst" => "imdbId")
                 index_header = 0
                 continue
             elseif counter >= limit
@@ -87,13 +87,14 @@ function process_imdb_payload(imdb_file::String, callback::Function)
             println("Insertando en $(filename_collection)   ::::::  Cantidad de Elementos Insertados al momento: $(len)")
             callback(filename_collection, imdb_payload)
         end
-    catch e 
+    catch e
         rethrow("Error proccesing data: $e")
     end
 
 end
 
 function proccess_imdb_files(imdb_files::Vector{String}, callback::Function)
+    println("Fecha y hora actual: ", hora_start_script)
 
     hour_func_start = now()
 
@@ -109,13 +110,18 @@ function proccess_imdb_files(imdb_files::Vector{String}, callback::Function)
     println("Tardanza total ::  ", ((now() - hora_start_script) / Millisecond(1)) / 60000)
 end
 
-
 function upload_csv()
     is_append = false
+    collections = Set()
     return function (collection::String, contents::Array)
-        df  = vcat(DataFrame.(contents)...)
-        CSV.write("./data_output/"*collection*".csv", df, append = is_append)
-        is_append = true
+        if collection in collections
+            is_append = true
+        else 
+            push!(collections, collection)
+            is_append = false
+        end 
+        df = vcat(DataFrame.(contents)...)
+        CSV.write("./data_output/" * collection * ".csv", df, append=is_append)
     end
 end
 
@@ -125,7 +131,7 @@ function upload_database(host::String, port::Int, database::String)
     end
 end
 
-function main()
+function process_IMDB()
 
     try
 
@@ -142,10 +148,10 @@ function main()
         host = "localhost"
         port = 27017
         database = "imdb_data"
-        # mongo = Mongo(host, port)
 
         # if you want to use mongo with threads, comment de firts line below and uncomment the  nextone
         proccess_imdb_files(imdb_files, upload_csv())
+
         # proccess_imdb_files(imdb_files, upload_database(host, port, database))
 
     catch error
@@ -154,5 +160,10 @@ function main()
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    main()
+    proccess_IMDB()
+
+
+end
+
+export process_IMDB
 end

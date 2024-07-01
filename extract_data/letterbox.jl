@@ -17,9 +17,9 @@ content_type = "movie"
 
 
 function process_scraping(content_type::String, url::String)
-    page_step = 5 # change to 100 
+    page_step = 3 # change to 100 
     # n_pages = get_page_numbers(url) 
-    n_pages = 5 #for testing
+    n_pages = 3 #for testing
     println("n_pages :: $n_pages")
 
     for i in 1:page_step:n_pages
@@ -167,20 +167,10 @@ function get_scraping(item, content_type::String)
             "id" => id,
             "permalink" => url,
             "title" => title,
-            "type" => content_type,
-            
+            "type" => content_type,         
             "comments" => comments,
-
             "imdb_id" => imdb_id,
             "tmdb_id" => tmdb_id,
-            
-            "popularity" => Dict(
-                # "votes" => votes,
-                # "likes" => likes,
-                # "views" => views,
-                "rating" => rating,
-            ),
-            
             "createdAt" => string(today()),
         )
 
