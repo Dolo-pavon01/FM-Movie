@@ -24,6 +24,8 @@ Para la instalación de dichos paquetes, puede ejecutarse el archivo `requiremen
 
 ** Para la ejecución de un archivo que hace uso de threads, debe ejecutarse el archivo con un argumento especial. Por ejemplo, si quiere ejecutarse el archivo en donde se obtienen datos de letterbox usando threads, debe correrse por terminal `julia letterbox.jl --threads n`, siendo n el número de threads que quieren utilizarse.
 
+*** Para la ejecución de un notebook, el usuario debe asegurarse que se está usando un kernel de Julia y no uno de python u otros.
+
 #### Objetivo y orden del trabajo práctico:
 
 El objetivo de este trabajo es demostrar lo que aprendimos sobre Julia a lo largo de estos meses, obteniendo de la web data sobre películas, manipulándola y analizándola para finalmente poder realizar una predicción sobre el rating de la película en el sitio especializado imdb. Así, el trabajo puede dividirse en tres etapas principales: 
