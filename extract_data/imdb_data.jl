@@ -114,7 +114,6 @@ function upload_csv()
     is_append = false
     return function (collection::String, contents::Array)
         df  = vcat(DataFrame.(contents)...)
-        print(is_append)
         CSV.write("./data_output/"*collection*".csv", df, append = is_append)
         is_append = true
     end
