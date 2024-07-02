@@ -1,6 +1,12 @@
 # FM-Movie
 
-Repositorio destinado al desarrollo del trabajo práctico de la materia Teoría de Lenguaje (75.31), 
+Repositorio destinado al desarrollo del trabajo práctico de la materia Teoría de Lenguaje (75.31).
+
+### Integrantes
+
+Dolores Pavón - 108221
+Facundo Fernández - 109097
+Miguel Metz - 106148
 
 #### Para poder ejecutar los archivos presentes en este trabajo, es necesario tener instalados los siguientes paquetes:
 
