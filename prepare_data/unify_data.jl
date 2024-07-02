@@ -8,7 +8,7 @@ using Dates
 import Tables: rows
 
 
-CSV_UNIFIEDDATA = "tp_data_final.csv"
+CSV_UNIFIEDDATA = "./data_output/tp_data_final.csv"
 
 col_imdb_complete = "imdb_complete"
 col_tmdb_complete = "tmdb_complete"
@@ -57,6 +57,21 @@ function isnull(value::Any)
         return true
     end
     return false
+end
+
+
+function string_a_lista(s::Union{Missing, String})
+    if ismissing(s)
+        return missing
+    end
+
+    s = replace(s, "[" => "")
+    s = replace(s, "]" => "")
+    s = strip(s)
+
+    list = split(s, ",")
+    list = [strip(palabra, [' ', '\'']) for palabra in list]
+    return [string.(palabra) for palabra in list]
 end
 
 
@@ -292,7 +307,11 @@ function get_imdb_complete(df::DataFrame)
     )
     df_imdb_complete = get_data_from_mongo(DB_TESTING, col_imdb_complete, query, projection)
 
-    transform!(df_imdb_complete, :companies => ByRow(x -> set_company_names(x)) => :companies)
+    for col in [ "cast", "country", "keywords", "companies" ]
+        transform!(df_imdb_complete, col => ByRow(x -> string_a_lista(x)) => col)
+    end
+
+    # transform!(df_imdb_complete, :companies => ByRow(x -> set_company_names(x)) => :companies)
     transform!(df_imdb_complete, :country => ByRow(x -> set_country(x)) => :country)
     for col_name in [ "cast", "keywords" ]
         transform!(df_imdb_complete, col_name => ByRow(x -> reset_string_array(x)) => col_name)
@@ -409,13 +428,14 @@ function process_UNIFY()
     df = get_name_basics(df)
     df = get_imdb_complete(df)
     
-    df_tmdb = get_tmdb_complete()
-    
-    df = complete_data(df, df_tmdb)
+    # Se omite su uso por la cantidad de datos
+    # df_tmdb = get_tmdb_complete()
+    # df = complete_data(df, df_tmdb)
+
     df = set_nulls_to_missing(df)
     df_ratings_notnull = dropmissing(df, :rating);
     
-    insert_to_mongo(df)
+    # insert_to_mongo(df)
     CSV.write(CSV_UNIFIEDDATA, df_ratings_notnull)
 
     # println("\n\n$df\n\n")
